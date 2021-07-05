@@ -1,36 +1,10 @@
-
 """
-Introduction
-^^^^^^^^^^^^
+Kernel module the kernels to sit in.
 
-In terms of Gaussian Processes, a kernel is a function that specifies
-the degree of similarity between variables given their relative
-positions in parameter space. If known variables *x* and *x'* are
-close together then observed variables *y* and *y'* may also be
-similar, depending on the kernel function and its parameters. *Note:
-this may be too simple a definition for the broad range of kernels
-available in :py:class:`GPy`.*
-
-:py:class:`GPy.kern.src.kern.Kern` is a generic kernel object
-inherited by more specific, end-user kernels used in models. It
-provides methods that specific kernels should generally have such as
-:py:class:`GPy.kern.src.kern.Kern.K` to compute the value of the
-kernel, :py:class:`GPy.kern.src.kern.Kern.add` to combine kernels and
-numerous functions providing information on kernel gradients.
-
-There are several inherited types of kernel that provide a basis for specific end user kernels:
-
-.. inheritance-diagram:: GPy.kern.src.kern.Kern GPy.kern.src.static GPy.kern.src.stationary GPy.kern.src.kern.CombinationKernel GPy.kern.src.brownian GPy.kern.src.linear GPy.kern.src.standard_periodic
-   :top-classes: GPy.core.parameterization.parameterized.Parameterized
-
-e.g. the archetype :py:class:`GPy.kern.RBF` does not inherit directly from :py:class:`GPy.kern.src.kern.Kern`, but from :py:class:`GPy.kern.src.stationary`.
-
-.. inheritance-diagram:: GPy.kern.src.kern.Kern GPy.kern.RBF
-   :top-classes: GPy.core.parameterization.parameterized.Parameterized
-
+.. automodule:: .src
+   :members:
+   :private-members:
 """
-
-
 from .src.kern import Kern
 from .src.add import Add
 from .src.prod import Prod
@@ -38,7 +12,7 @@ from .src.rbf import RBF
 from .src.linear import Linear, LinearFull
 from .src.static import Bias, White, Fixed, WhiteHeteroscedastic, Precomputed
 from .src.brownian import Brownian
-from .src.stationary import Exponential, OU, Matern32, Matern52, ExpQuad, RatQuad, Cosine, Sinc, ExpQuadCosine
+from .src.stationary import Exponential, OU, Matern32, Matern52, ExpQuad, RatQuad, Cosine, ExponentialChordal, ExpQuadChordal, Matern52Chordal, C2WendlandChordal, C2WendlandGeo
 from .src.mlp import MLP
 from .src.periodic import PeriodicExponential, PeriodicMatern32, PeriodicMatern52
 from .src.standard_periodic import StdPeriodic

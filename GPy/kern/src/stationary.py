@@ -787,3 +787,286 @@ class RatQuad(Stationary):
     def update_gradients_diag(self, dL_dKdiag, X):
         super(RatQuad, self).update_gradients_diag(dL_dKdiag, X)
         self.power.gradient = 0.
+
+class ExponentialChordal(Stationary):
+    def __init__(self, input_dim=1, variance=1., lengthscale=None, ARD=False, active_dims=None, name='ExponentialChordal'):
+        super(ExponentialChordal, self).__init__(input_dim, variance, lengthscale, ARD, active_dims, name)
+
+    def K(self, X, X2=None):
+        # Here X and X2 are angles
+        if X2 is None:
+            Xrp = np.tile(X.reshape(1, -1).transpose(), (1, X.shape[0]))
+            r =  np.abs(2.*np.sin(0.5*(Xrp - X.flatten())))
+            util.diag.view(r)[:, ] = 0.  # force diagnoal to be zero: sometime numerically a little negative
+            r = np.clip(r, 0, 2.)/self.lengthscale
+        else:
+            # Matrix where each column is X
+            Xrp = np.tile(X.reshape(1, -1).transpose(), (1, X2.shape[0]))
+            r = np.abs(2.*np.sin(0.5*(Xrp - X2.flatten())))
+            r = np.clip(r, 0, 2.)/self.lengthscale
+        return self.K_of_r(r)
+
+    def K_of_r(self, r):
+        return self.variance * np.exp(-r)
+
+    def dK_dr(self, r):
+        return -self.K_of_r(r)
+
+    def to_dict(self):
+        """
+        Convert the object into a json serializable dictionary.
+
+        Note: It uses the private method _save_to_input_dict of the parent.
+
+        :return dict: json serializable dictionary containing the needed information to instantiate the object
+        """
+
+        input_dict = super(ExponentialChordal, self)._save_to_input_dict()
+        input_dict["class"] = "GPy.kern.ExponentialChordal"
+        return input_dict
+
+    @staticmethod
+    def _build_from_input_dict(kernel_class, input_dict):
+        useGPU = input_dict.pop('useGPU', None)
+        return ExponentialChordal(**input_dict)
+
+#    def sde(self):
+#        """
+#        Return the state space representation of the covariance.
+#        """
+#        F  = np.array([[-1/self.lengthscale]])
+#        L  = np.array([[1]])
+#        Qc = np.array([[2*self.variance/self.lengthscale]])
+#        H = np.array([[1]])
+#        Pinf = np.array([[self.variance]])
+#        # TODO: return the derivatives as well
+#
+#        return (F, L, Qc, H, Pinf)ef
+class ExpQuadChordal(Stationary):
+    """
+    The Exponentiated quadratic covariance function.
+
+    .. math::
+
+       k(r) = \sigma^2 (1 + \sqrt{5} r + \\frac53 r^2) \exp(- \sqrt{5} r)
+
+    notes::
+     - Yes, this is exactly the same as the RBF covariance function, but the
+       RBF implementation also has some features for doing variational kernels
+       (the psi-statistics).
+
+    """
+    def __init__(self, input_dim, variance=1., lengthscale=None, ARD=False, active_dims=None, name='ExpQuadChordal'):
+        super(ExpQuadChordal, self).__init__(input_dim, variance, lengthscale, ARD, active_dims, name)
+
+    def to_dict(self):
+        """
+        Convert the object into a json serializable dictionary.
+
+        Note: It uses the private method _save_to_input_dict of the parent.
+
+        :return dict: json serializable dictionary containing the needed information to instantiate the object
+        """
+
+        input_dict = super(ExpQuadChordal, self)._save_to_input_dict()
+        input_dict["class"] = "GPy.kern.ExpQuadChordal"
+        return input_dict
+
+    @staticmethod
+    def _build_from_input_dict(kernel_class, input_dict):
+        useGPU = input_dict.pop('useGPU', None)
+        return ExpQuadChordal(**input_dict)
+
+    def K(self, X, X2=None):
+        # Here X and X2 are angles
+        if X2 is None:
+            Xrp = np.tile(X.reshape(1, -1).transpose(), (1, X.shape[0]))
+            r =  np.abs(2.*np.sin(0.5*(Xrp - X.flatten())))
+            util.diag.view(r)[:, ] = 0.  # force diagnoal to be zero: sometime numerically a little negative
+            r = np.clip(r, 0, 2.)/self.lengthscale
+        else:
+            # Matrix where each column is X
+            Xrp = np.tile(X.reshape(1, -1).transpose(), (1, X2.shape[0]))
+            r = np.abs(2.*np.sin(0.5*(Xrp - X2.flatten())))
+            r = np.clip(r, 0, 2.)/self.lengthscale
+        return self.K_of_r(r)
+
+    def K_of_r(self, r):
+        return self.variance * np.exp(-0.5 * r**2)
+
+    def dK_dr(self, r):
+        return -r*self.K_of_r(r)
+
+class Matern52Chordal(Stationary):
+    """
+    Matern 5/2 kernel:
+
+    .. math::
+
+       k(r) = \sigma^2 (1 + \sqrt{5} r + \\frac53 r^2) \exp(- \sqrt{5} r)
+    """
+    def __init__(self, input_dim, variance=1., lengthscale=None, ARD=False, active_dims=None, name='Mat52Chordal'):
+        super(Matern52Chordal, self).__init__(input_dim, variance, lengthscale, ARD, active_dims, name)
+
+    def to_dict(self):
+        """
+        Convert the object into a json serializable dictionary.
+
+        Note: It uses the private method _save_to_input_dict of the parent.
+
+        :return dict: json serializable dictionary containing the needed information to instantiate the object
+        """
+
+        input_dict = super(Matern52Chordal, self)._save_to_input_dict()
+        input_dict["class"] = "GPy.kern.Matern52Chordal"
+        return input_dict
+
+    @staticmethod
+    def _build_from_input_dict(kernel_class, input_dict):
+        useGPU = input_dict.pop('useGPU', None)
+        return Matern52Chordal(**input_dict)
+
+    def K(self, X, X2=None):
+        # Here X and X2 are angles
+        if X2 is None:
+            Xrp = np.tile(X.reshape(1, -1).transpose(), (1, X.shape[0]))
+            r = np.abs(2. * np.sin(0.5 * (Xrp - X.flatten())))
+            util.diag.view(r)[:, ] = 0.  # force diagnoal to be zero: sometime numerically a little negative
+            r = np.clip(r, 0, 2.) / self.lengthscale
+        else:
+            # Matrix where each column is X
+            Xrp = np.tile(X.reshape(1, -1).transpose(), (1, X2.shape[0]))
+            r = np.abs(2. * np.sin(0.5 * (Xrp - X2.flatten())))
+            r = np.clip(r, 0, 2.) / self.lengthscale
+        return self.K_of_r(r)
+
+    def K_of_r(self, r):
+        return self.variance*(1+np.sqrt(5.)*r+5./3*r**2)*np.exp(-np.sqrt(5.)*r)
+
+    def dK_dr(self, r):
+        return self.variance*(10./3*r -5.*r -5.*np.sqrt(5.)/3*r**2)*np.exp(-np.sqrt(5.)*r)
+
+    def Gram_matrix(self, F, F1, F2, F3, lower, upper):
+        """
+        Return the Gram matrix of the vector of functions F with respect to the RKHS norm. The use of this function is limited to input_dim=1.
+
+        :param F: vector of functions
+        :type F: np.array
+        :param F1: vector of derivatives of F
+        :type F1: np.array
+        :param F2: vector of second derivatives of F
+        :type F2: np.array
+        :param F3: vector of third derivatives of F
+        :type F3: np.array
+        :param lower,upper: boundaries of the input domain
+        :type lower,upper: floats
+        """
+        assert self.input_dim == 1
+        def L(x,i):
+            return(5*np.sqrt(5)/self.lengthscale**3*F[i](x) + 15./self.lengthscale**2*F1[i](x)+ 3*np.sqrt(5)/self.lengthscale*F2[i](x) + F3[i](x))
+        n = F.shape[0]
+        G = np.zeros((n,n))
+        for i in range(n):
+            for j in range(i,n):
+                G[i,j] = G[j,i] = integrate.quad(lambda x : L(x,i)*L(x,j),lower,upper)[0]
+        G_coef = 3.*self.lengthscale**5/(400*np.sqrt(5))
+        Flower = np.array([f(lower) for f in F])[:,None]
+        F1lower = np.array([f(lower) for f in F1])[:,None]
+        F2lower = np.array([f(lower) for f in F2])[:,None]
+        orig = 9./8*np.dot(Flower,Flower.T) + 9.*self.lengthscale**4/200*np.dot(F2lower,F2lower.T)
+        orig2 = 3./5*self.lengthscale**2 * ( np.dot(F1lower,F1lower.T) + 1./8*np.dot(Flower,F2lower.T) + 1./8*np.dot(F2lower,Flower.T))
+        return(1./self.variance* (G_coef*G + orig + orig2))
+
+class C2WendlandChordal(Stationary):
+    """
+    C2 Wendland kernel with angle chordal distance:
+    """
+    def __init__(self, input_dim, variance=1., lengthscale=None, ARD=False, active_dims=None, name='C2WendlandChordal', tau=4):
+        super(C2WendlandChordal, self).__init__(input_dim, variance, lengthscale, ARD, active_dims, name)
+        self.tau = tau
+
+    def to_dict(self):
+        """
+        Convert the object into a json serializable dictionary.
+
+        Note: It uses the private method _save_to_input_dict of the parent.
+
+        :return dict: json serializable dictionary containing the needed information to instantiate the object
+        """
+
+        input_dict = super(C2WendlandChordal, self)._save_to_input_dict()
+        input_dict["class"] = "GPy.kern.C2WendlandChordal"
+        return input_dict
+
+    @staticmethod
+    def _build_from_input_dict(kernel_class, input_dict):
+        useGPU = input_dict.pop('useGPU', None)
+        return C2WendlandChordal(**input_dict)
+
+    def K(self, X, X2=None):
+        # Here X and X2 are angles
+        if X2 is None:
+            Xrp = np.tile(X.reshape(1, -1).transpose(), (1, X.shape[0]))
+            r = np.abs(2. * np.sin(0.5 * (Xrp - X.flatten())))
+            util.diag.view(r)[:, ] = 0.  # force diagnoal to be zero: sometime numerically a little negative
+            r = np.clip(r, 0, 2.) / self.lengthscale
+        else:
+            # Matrix where each column is X
+            Xrp = np.tile(X.reshape(1, -1).transpose(), (1, X2.shape[0]))
+            r = np.abs(2. * np.sin(0.5 * (Xrp - X2.flatten())))
+            r = np.clip(r, 0, 2.) / self.lengthscale
+        return self.K_of_r(r)
+
+    def K_of_r(self, r):
+        k = 0.5*r
+        return np.clip(self.variance*(1 + self.tau*k)*((1 - k)**self.tau), a_min=0,a_max=None)
+
+    def dK_dr(self, r):
+        return -0.25*self.variance*self.tau*r*((1 - 0.5*r)**(self.tau - 1)) * (1 + self.tau)
+
+class C2WendlandGeo(Stationary):
+    """
+    C2 Wendland kernel with angle chordal distance:
+    """
+    def __init__(self, input_dim, variance=1., lengthscale=None, ARD=False, active_dims=None, name='C2WendlandGeo', tau=4):
+        super(C2WendlandGeo, self).__init__(input_dim, variance, lengthscale, ARD, active_dims, name)
+        self.tau=tau
+
+    def to_dict(self):
+        """
+        Convert the object into a json serializable dictionary.
+
+        Note: It uses the private method _save_to_input_dict of the parent.
+
+        :return dict: json serializable dictionary containing the needed information to instantiate the object
+        """
+
+        input_dict = super(C2WendlandGeo, self)._save_to_input_dict()
+        input_dict["class"] = "GPy.kern.C2WendlandGeo"
+        return input_dict
+
+    @staticmethod
+    def _build_from_input_dict(kernel_class, input_dict):
+        useGPU = input_dict.pop('useGPU', None)
+        return C2WendlandGeo(**input_dict)
+
+    def K(self, X, X2=None):
+        # Here X and X2 are angles
+        if X2 is None:
+            Xrp = np.tile(X.reshape(1, -1).transpose(), (1, X.shape[0]))
+            r = np.arccos(np.cos(Xrp - X.flatten()))
+            util.diag.view(r)[:, ] = 0.  # force diagnoal to be zero: sometime numerically a little negative
+            r = np.clip(r, 0, np.pi) / self.lengthscale
+        else:
+            # Matrix where each column is X
+            Xrp = np.tile(X.reshape(1, -1).transpose(), (1, X2.shape[0]))
+            r = np.arccos(np.cos(Xrp - X.flatten()))
+            r = np.clip(r, 0, np.pi) / self.lengthscale
+        return self.K_of_r(r)
+
+    def K_of_r(self, r):
+        k = r/np.pi
+        return np.clip(self.variance*(1 + self.tau*k)*((1 - k)**self.tau), a_min=0, a_max=None)
+
+    def dK_dr(self, r):
+        return -self.variance*self.tau*r*((1 - r/np.pi)**(self.tau - 1)) * (1 + self.tau)/np.pi**2
