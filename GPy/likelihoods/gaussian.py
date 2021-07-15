@@ -54,7 +54,6 @@ class Gaussian(Likelihood):
 
         :return dict: json serializable dictionary containing the needed information to instantiate the object
         """
-
         input_dict = super(Gaussian, self)._save_to_input_dict()
         input_dict["class"] = "GPy.likelihoods.Gaussian"
         input_dict["variance"] = self.variance.values.tolist()

@@ -16,7 +16,7 @@ class GPRegression(GP):
     :param Y: observed values
     :param kernel: a GPy kernel, defaults to rbf
     :param Norm normalizer: [False]
-    :param noise_var: the noise variance for Gaussian likelhood, defaults to 1.
+    :param noise_var: the noise variance for Gaussian likelihood, defaults to 1.
 
         Normalize Y with the norm given.
         If normalizer is False, no normalization will be done

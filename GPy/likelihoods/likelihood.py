@@ -418,7 +418,7 @@ class Likelihood(Parameterized):
         :param sigma: standard deviation of posterior
 
         """
-        #conditional_mean: the edpected value of y given some f, under this likelihood
+        #conditional_mean: the expected value of y given some f, under this likelihood
         fmin = -np.inf
         fmax = np.inf
         def int_mean(f,m,v):
