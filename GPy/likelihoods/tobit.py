@@ -31,15 +31,19 @@ class Tobit(Likelihood):
         self.link_parameter(self.variance)
         if(lowerThreshold is not None):
             self.l = Param('lowerThreshold', lowerThreshold)
+            self.l.fix()
             self.link_parameter(self.l)
         else:
             self.l = None
         if(upperThreshold is not None):
             self.u = Param('upperThreshold', upperThreshold)
+            self.u.fix()
             self.link_parameter(self.u)
         else:
             self.u = None
 
+        print("l : ")
+        print(self.l)
 
     def to_dict(self):
         """
@@ -74,18 +78,29 @@ class Tobit(Likelihood):
         for the derivation of the formula
         '''
         s = np.sqrt(self.variance + variance)
-        a = (self.l - mu)/s
-        b = (self.u - mu)/s
-        phi_a = stats.norm.pdf(a)
-        phi_b = stats.norm.pdf(b)
-        Phi_a = stats.norm.cdf(a)
-        Phi_b = stats.norm.cdf(b)
+        if(self.l is not None):
+            a = (self.l - mu)/s
+            phi_a = stats.norm.pdf(a)
+            Phi_a = stats.norm.cdf(a)
+        else:
+            phi_a = 0.
+            Phi_a = 0.
+
+        if(self.u is not None):
+            b = (self.u - mu)/s
+            phi_b = stats.norm.pdf(b)
+            Phi_b = stats.norm.cdf(b)
+        else:
+            phi_b = 0.
+            Phi_b = 1.
 
         Ey = mu*(Phi_b - Phi_a) + s*(phi_a - phi_b)
         if(self.l is not None):
             Ey += self.l*Phi_a
         if(self.u is not None):
-            Ey += self.u*(1-Phi_b)
+            Ey += self.u*(1.-Phi_b)
+
+        print("tobit::predictive_mean: {}".format(Ey))
         return Ey
 
     def predictive_variance(self, mu, variance, predictive_mean=None, Y_metadata=None):
@@ -95,22 +110,39 @@ class Tobit(Likelihood):
                Censored Data Using Expectation Propagation, Groot, Lucas
                for the derivation of the formula
         '''
-
         s = np.sqrt(self.variance + variance)
-        a = (self.l - mu) / s
-        b = (self.u - mu) / s
-        phi_a = stats.norm.pdf(a)
-        phi_b = stats.norm.pdf(b)
-        Phi_a = stats.norm.cdf(a)
-        Phi_b = stats.norm.cdf(b)
-
-        Vy = mu*(Phi_b - Phi_a) + s*(Phi_b*b**2 - Phi_a*a**2 + 2.*(phi_b - phi_a)) - predictive_mean**2
         if(self.l is not None):
-            Vy +=  Phi_a * l ** 2
-        if(self.u is not None):
-            Vy += (1 - Phi_b)*u ** 2
+            a = (self.l - mu) / s
+            phi_a = stats.norm.pdf(a)
+            Phi_a = stats.norm.cdf(a)
+        else:
+            a = 0.
+            phi_a = 0.
+            Phi_a = 0.
 
+        if(self.u is not None):
+            b = (self.u - mu) / s
+            phi_b = stats.norm.pdf(b)
+            Phi_b = stats.norm.cdf(b)
+        else:
+            b = 0.
+            phi_b = 0.
+            Phi_b = 1.
+
+        #Vy = mu*(Phi_b - Phi_a) + s*(a*phi_a - Phi_a - b*phi_b + Phi_b) - predictive_mean**2
+        Vy = (Phi_b -Phi_a)*mu**2 + 2.*s*mu*(phi_a - phi_b) + (a*phi_a - Phi_a - b*phi_b + Phi_b)*s**2 - predictive_mean**2
+        if(self.l is not None):
+            Vy += Phi_a * self.l ** 2
+        if(self.u is not None):
+            Vy += (1. - Phi_b)*self.u ** 2
+
+        print("tobit::predictive_variance : {}".format(Vy))
         return Vy
+
+    def predictive_quantiles(self, mu, var, quantiles, Y_metadata=None):
+        pred_mean = self.predictive_mean(mu, var)
+        pred_var = self.predictive_variance(mu, var, pred_mean)
+        return [stats.norm.ppf(q / 100.) * np.sqrt(pred_var) + pred_mean for q in quantiles]
 
     def update_gradients(self, grad):
         self.variance.gradient = grad
@@ -132,37 +164,49 @@ class Tobit(Likelihood):
         :param v_i: mean/variance of the cavity distribution (float)
         """
         ''' Variance and mean of the cavity distribution'''
-        sigma_i = 1./tau_i
-        sigma2_i = sigma_i**2
-        mu_i = v_i*sigma_i
+        sigma2_i = 1./tau_i
+        mu_i = v_i*sigma2_i
         sum_var = self.variance + sigma2_i
 
-        if(data_i == self.l):
+        if(self.l is None):
+            l = np.NINF
+        else:
+            l = self.l
+        if(self.u is None):
+            u = np.PINF
+        else:
+            u = self.u
+
+        if(data_i <= l):
+            print("data_i < l")
             sum_var_root = np.sqrt(sum_var)
-            z_il = (mu_i - self.l) / sum_var_root
+            z_il = (mu_i - l) / sum_var_root
             ''' Probit moments '''
             mp_0 = stats.norm.cdf(z_il)
             phi_Phi_zil = self.ratio_phiPhi(z_il)
             mp_1 = mu_i + (sigma2_i*phi_Phi_zil)/sum_var_root
-            mp_2 = sigma2_i - ((sigma2_i**2)*phi_Phi_zil)/((z_il + phi_Phi_zil)*sum_var)
+            mp_2 = sigma2_i - ((sigma2_i**2)*phi_Phi_zil)/sum_var*(z_il + phi_Phi_zil)
 
             ''' Tobit moments '''
             Z_hat = 1. - mp_0
             phi_Phi_zil_minus = self.ratio_phiPhi(-z_il)
             mu_hat = mu_i - (sigma2_i*phi_Phi_zil_minus)/sum_var_root
             sigma2_hat = ((sigma2_i + mu_i**2) - mp_0*(mp_2 + mp_1**2))/Z_hat - mu_hat**2
-        elif(data_i == self.u):
-            z_il = (mu_i - self.u) / sum_var_root
+        elif(data_i >= u):
+            print("data_i > u")
+            z_il = (mu_i - u) / sum_var_root
             phi_Phi_zil = self.ratio_phiPhi(z_il)
             Z_hat = stats.norm.cdf(z_il)
             mu_hat = mu_i + (sigma2_i*phi_Phi_zil)/sum_var_root
             sigma2_hat = sigma2_i - (phi_Phi_zil*sigma2_i**2)*(z_il + phi_Phi_zil)/sum_var
         else:
+            print("Gaussian moment")
             ''' Gaussian moments '''
             Z_hat = 1. / np.sqrt(2. * np.pi * sum_var) * np.exp(-.5 * (data_i - mu_i) ** 2. / sum_var)
-            sigma2_hat = 1. / (1. / self.variance + tau_i)
-            mu_hat = sigma2_hat * (data_i / self.variance + v_i)
+            sigma2_hat = sigma2_i - sigma2_i**2 / sum_var #1. / (1. / self.variance + tau_i)
+            mu_hat = mu_i + sigma2_i*((data_i - mu_i)/ sum_var) #sigma2_hat * (data_i / self.variance + v_i)
 
+        #print("Tobit::moments_match_ep (data_i, tau_i, v_i, Z_hat, mu_hat, sigma2_hat) : {}, {}, {}, {}, {}, {}".format(data_i, tau_i, v_i, Z_hat, mu_hat, sigma2_hat))
         return Z_hat, mu_hat, sigma2_hat
 
     def pdf_link(self, link_f, y, Y_metadata=None):
@@ -254,7 +298,6 @@ class Tobit(Likelihood):
         :returns: derivative of log likelihood evaluated at points link(f) w.r.t variance parameter
         :rtype: float
         """
-
         assert ('lowerCensored' in Y_metadata.keys() and 'upperCensored' in Y_metadata.keys()
                 and 'gaussianIndexes' in Y_metadata.keys())
 

@@ -14,24 +14,40 @@ Gaussian Processes regression with censored data example using artificial data a
 def f(x):
     return ((6.*x - 2.)**2)*np.sin(2.*(6.*x-2.))
 
-def plotModels(m_tobit, m_normal, m_normalWithoutCensoredData):
+def plotModels(xc, yc, xc2, yc2, m_tobit, m_normal, m_normalWithoutCensoredData):
+    x_gt = np.linspace(0,1,200)
+    y_gt = f(x_gt)
+
+    fig, ax = plt.subplots()
     plt.title("Tobit GP model")
-    m_tobit.plot(fignum=0)
+    plt.plot(x_gt, y_gt, linestyle='-', color="r", label="GT")
+    plt.plot(xc, yc, linestyle='None', marker='+', markersize=10, color='k', label="Data")
+    m_tobit.plot_f(fignum=0, ax=ax)
+    plt.xlim([0, 1])
 
+    fig, ax = plt.subplots()
     plt.title("Standart GP model")
-    m_normal.plot(fignum=1)
+    plt.plot(x_gt, y_gt,linestyle='-', color="r", label="GT")
+    plt.plot(xc, yc, linestyle='None', marker='+', markersize=10, color='k', label="Data")
+    m_normal.plot_f(fignum=1, ax=ax)
+    plt.xlim([0,1])
 
-    plt.figure(2)
-    plt.title("Standart GP model without censored data")
-    m_normalWithoutCensoredData.plot(fignum=2)
+    fig, ax = plt.subplots()
+    plt.title("Standart ignoring censured data GP model")
+    plt.plot(x_gt, y_gt, linestyle='-', color="r", label="GT")
+    plt.plot(xc2, yc2, linestyle='None', marker='+', markersize=10, color='k', label="Data")
+    m_normalWithoutCensoredData.plot_f(fignum=2, ax=ax)
+    plt.xlim([0, 1])
+    plt.show()
 
 def artificialExample():
     ''' Generate Data '''
+    np.random.seed(4)
     n = 30
     x = np.linspace(0,1,n)
-    y = f(x) + np.random.normal(0, np.sqrt(0.2), x.shape[0])
+    y = f(x) + np.random.normal(0, np.sqrt(0.1), x.shape[0])
     x = x.reshape((n,1))
-    l = -0.2265
+    l =  -0.45 #-0.2265
     lowerCensoredData = np.zeros((n,), dtype='int64')
     lowerCensoredData_indexes = [idx for idx, val in np.ndenumerate(y) if val < l]
     np.put(lowerCensoredData, lowerCensoredData_indexes, 1)
@@ -45,7 +61,7 @@ def artificialExample():
 
     ''' Censored data '''
     yc = y.copy()
-    np.put(yc, y_metadata["lowerCensored"], l)
+    np.put(yc, lowerCensoredData_indexes, l)
 
     ''' Data without censored data'''
     yc2 = np.delete(yc, lowerCensoredData_indexes)
@@ -54,21 +70,35 @@ def artificialExample():
     yc2 = yc2.reshape(yc2.shape[0],1)
     x2 = x2.reshape(x2.shape[0],1)
 
-
     ''' GP models '''
-    y = y.reshape((n,1))
-    kernel = GPy.kern.RBF(input_dim=1, variance=5, lengthscale=0.1)
-    m_tobit = GPy.models.GPRegressionCensored(x, yc, lowerThreshold=l, upperThreshold=None, kernel=kernel, Y_metadata=y_metadata)
-    m_normal = GPy.models.GPRegression(x, y, kernel=kernel)
-    m_normalWithoutCensoredData = GPy.models.GPRegression(x2, yc2, kernel=kernel)
+    kernel_tobit = GPy.kern.RBF(input_dim=1, variance=5, lengthscale=0.1)
+    kernel_normal = GPy.kern.RBF(input_dim=1, variance=5, lengthscale=0.1)
+    kernel_normalCensored = GPy.kern.RBF(input_dim=1, variance=5, lengthscale=0.1)
+    print("Create GP with tobit model ...")
+    m_tobit = GPy.models.GPRegressionCensored(x, yc, lowerThreshold=l, upperThreshold=None, kernel=kernel_tobit, noise_var = 0.1, Y_metadata=y_metadata)
+    m_tobit.likelihood.variance.fix()
+    print("Create standart GP model ...")
+    m_normal = GPy.models.GPRegression(x, yc, kernel=kernel_normal)
+    m_normal.likelihood.variance.fix()
+    print("Create standart GP model and ignoring censured data...")
+    m_normalWithoutCensoredData = GPy.models.GPRegression(x2, yc2, kernel=kernel_normalCensored)
+    m_normalWithoutCensoredData.likelihood.variance.fix()
 
     ''' Optimization '''
+    print("Optimizer with tobit model ...")
+    print("---> Model before opt : ")
+    print(m_tobit[''])
     m_tobit.optimize(optimizer='lbfgs', max_iters=500, messages=True)
+    print("---> Model after opt : ")
+    print(m_tobit[''])
+    print("Optimizer with standart model ...")
+    print(m_normal[''])
     m_normal.optimize(optimizer='lbfgs', max_iters=500, messages=True)
+    print("Optimizer with standart model and ignoring censured data...")
     m_normalWithoutCensoredData.optimize(optimizer='lbfgs', max_iters=500, messages=True)
 
     ''' Plots '''
-    plotModels(m_tobit, m_normal, m_normalWithoutCensoredData)
+    plotModels(x, yc, x2, yc2, m_tobit, m_normal, m_normalWithoutCensoredData)
 
 if __name__ == "__main__":
     artificialExample()
