@@ -200,7 +200,6 @@ class Tobit(Likelihood):
             mu_hat = mu_i + (sigma2_i*phi_Phi_zil)/sum_var_root
             sigma2_hat = sigma2_i - (phi_Phi_zil*sigma2_i**2)*(z_il + phi_Phi_zil)/sum_var
         else:
-            print("Gaussian moment")
             ''' Gaussian moments '''
             Z_hat = 1. / np.sqrt(2. * np.pi * sum_var) * np.exp(-.5 * (data_i - mu_i) ** 2. / sum_var)
             sigma2_hat = sigma2_i - sigma2_i**2 / sum_var #1. / (1. / self.variance + tau_i)
@@ -223,6 +222,12 @@ class Tobit(Likelihood):
         """
         return np.exp(self.logpdf_link(link_f, y, Y_metadata))
 
+    def logpdf_link_lowerCensored(self, link_f):
+        return stats.norm.logcdf((self.l - link_f)/np.sqrt(self.variance))
+
+    def logpdf_link_upperCensored(self, link_f):
+        return stats.norm.logcdf((link_f - self.u)/np.sqrt(self.variance))
+
     def logpdf_link(self, link_f, y, Y_metadata):
         """
         Log likelihood function given link(f)
@@ -235,9 +240,10 @@ class Tobit(Likelihood):
         :returns: log likelihood evaluated for this point
         :rtype: float
         """
+        res = np.empty((y.shape[0],1))
         inv_std = 1. / np.sqrt(self.variance)
 
-        assert('lowerCensored' in Y_metadata.keys() and 'upperCensored' in Y_metadata.keys()
+        assert( ('lowerCensored' in Y_metadata.keys() or 'upperCensored' in Y_metadata.keys())
                and 'gaussianIndexes' in Y_metadata.keys())
 
         ''' TODO : maybe store the indexes corresponding to the three cases once in Y_metadata '''
@@ -246,10 +252,18 @@ class Tobit(Likelihood):
         y_u_indexes = Y_metadata['upperCensored'] #[idx for idx_val in idxValTuples if val == u]
         y_indexes = Y_metadata['gaussianIndexes'] #[idx for idx, val in idxValTuples if val > u and val < l]
 
-        lowerCensoringSum = np.sum(stats.norm.logcdf((self.l - link_f[y_l_indexes]) * inv_std))
-        upperCensoringSum = np.sum(stats.norm.logcdf((link_f[y_u_indexes] - self.u) * inv_std))
-        gaussianSum = np.exp(np.sum(np.log(stats.norm.pdf(y[y_indexes], link_f[y_indexes], np.sqrt(self.variance)))))
-        return lowerCensoringSum + upperCensoringSum + gaussianSum
+        res[y_l_indexes] = self.logpdf_link_lowerCensored(link_f[y_l_indexes]) # stats.norm.logcdf((self.l - link_f[y_l_indexes]) * inv_std)
+        res[y_u_indexes] = self.logpdf_link_upperCensored(link_f[y_u_indexes]) #stats.norm.logcdf((link_f[y_u_indexes] - self.u) * inv_std)
+        res[y_indexes] = -(1.0/(2*self.variance))*((y[y_indexes]-link_f[y_indexes])**2) - 0.5*np.log(self.variance) - 0.5*np.log(2.*np.pi)
+        return res
+
+    def dlogpdf_dlink_lowerCensored(self, link_f):
+        zl = (link_f- self.l)/np.sqrt(self.variance)
+        return -self.ratio_phiPhi(-zl)
+
+    def dlogpdf_dlink_upperCensored(self, link_f):
+        zu = (link_f - self.u)/np.sqrt(self.variance)
+        return self.ratio_phiPhi(zu)
 
     ''' Formula taken from the supplementary material of "Gaussian Process Regression with
         Censored Data Using Expectation Propagation, P. Groot, P. Lucas" '''
@@ -265,10 +279,9 @@ class Tobit(Likelihood):
         :returns: gradient of log likelihood evaluated at points link(f)
         :rtype: Nx1 array
         """
+        grad = np.empty((y.shape[0], link_f.shape[1]))
 
-        grad = np.empty((y.shape[0],))
-
-        assert ('lowerCensored' in Y_metadata.keys() and 'upperCensored' in Y_metadata.keys()
+        assert (('lowerCensored' in Y_metadata.keys() or 'upperCensored' in Y_metadata.keys())
                 and 'gaussianIndexes' in Y_metadata.keys())
 
         ''' TODO : maybe store the indexes corresponding to the three cases once in Y_metadata '''
@@ -278,13 +291,75 @@ class Tobit(Likelihood):
         y_indexes = Y_metadata['gaussianIndexes']  # [idx for idx, val in idxValTuples if val > u and val < l]
 
         inv_std = 1./np.sqrt(self.variance)
-        zl = (link_f[y_l_indexes] - self.l)*inv_std
-        zu = (link_f[y_u_indexes] - self.u)*inv_std
-        grad[y_l_indexes] = -self.ratio_phiPhi(-zl)
-        grad[y_u_indexes] = self.ratio_phiPhi(zu)
+        grad[y_l_indexes] = self.dlogpdf_dlink_lowerCensored(link_f[y_l_indexes]) # -self.ratio_phiPhi(-zl)
+        grad[y_u_indexes] = self.dlogpdf_dlink_upperCensored(link_f[y_u_indexes]) #self.ratio_phiPhi(zu)
         grad[y_indexes] = (y[y_indexes] - link_f[y_indexes])*inv_std
 
         return inv_std*grad
+
+    def d2logpdf_dlink2_lowerCensored(self, link_f):
+        sigma = np.sqrt(self.variance)
+        z_l = (link_f - self.l) / sigma
+        phi_l = stats.norm.pdf(z_l)
+        Phi_l = stats.norm.cdf(z_l)
+        one_minus_Phi_l = np.ones((link_f.shape[0], 1)) - Phi_l
+        return link_f*phi_l*(one_minus_Phi_l - phi_l)/(self.variance*(one_minus_Phi_l**2))
+
+    def d2logpdf_dlink2_upperCensored(self, link_f):
+        sigma = np.sqrt(self.variance)
+        z_u = (link_f - self.u) / sigma
+        phi_u = stats.norm.pdf(z_u)
+        Phi_u = stats.norm.cdf(z_u)
+        return -link_f * phi_u * (phi_u + Phi_u) / (self.variance * Phi_u ** 2)
+
+    def d2logpdf_dlink2(self, link_f, y, Y_metadata=None):
+        """
+        Hessian at y, given link_f, w.r.t link_f.
+        i.e. second derivative logpdf at y given link(f_i) link(f_j)  w.r.t link(f_i) and link(f_j)
+
+        The hessian will be 0 unless i == j
+
+        .. math::
+            \\frac{d^{2} \\ln p(y_{i}|\\lambda(f_{i}))}{d^{2}f} = -\\frac{1}{\\sigma^{2}}
+
+        :param link_f: latent variables link(f)
+        :type link_f: Nx1 array
+        :param y: data
+        :type y: Nx1 array
+        :param Y_metadata: Y_metadata not used in gaussian
+        :returns: Diagonal of log hessian matrix (second derivative of log likelihood evaluated at points link(f))
+        :rtype: Nx1 array
+
+        .. Note::
+            Will return diagonal of hessian, since every where else it is 0, as the likelihood factorizes over cases
+            (the distribution for y_i depends only on link(f_i) not on link(f_(j!=i))
+        """
+
+        assert (('lowerCensored' in Y_metadata.keys() or 'upperCensored' in Y_metadata.keys())
+                and 'gaussianIndexes' in Y_metadata.keys())
+        hess = np.empty((y.shape[0], 1))
+
+        ''' TODO : maybe store the indexes corresponding to the three cases once in Y_metadata '''
+        # idxValTuples = enumerate(y)
+        y_indexes = Y_metadata['gaussianIndexes']  # [idx for idx, val in idxValTuples if val > u and val < l]
+
+        if(self.l is not None and 'lowerCensored' in Y_metadata.keys()):
+            y_l_indexes = Y_metadata['lowerCensored']  # [idx for idx, val in idxValTuples if val == l]
+            hess[y_l_indexes] = self.d2logpdf_dlink2_lowerCensored(link_f[y_l_indexes]) #link_f[y_indexes]*phi_l*(one_minus_Phi_l - phi_l)/(self.variance*(one_minus_Phi_l**2))
+        if(self.u is not None and 'upperThreshold' in Y_metadata.keys()):
+            y_u_indexes = Y_metadata['upperCensored']  # [idx for idx_val in idxValTuples if val == u]
+            hess[y_u_indexes] = self.d2logpdf_dlink2_upperCensored(link_f[y_u_indexes]) #-link_f[y_u_indexes]*phi_u*(phi_u + Phi_u)/(self.variance*Phi_u**2)
+
+        hess[y_indexes] = -(1.0/self.variance)*np.ones((y_indexes.shape[0], 1))
+        return hess
+
+    def dlogpdf_link_dvar_lowerCensored(self, link_f):
+        zl = (link_f - self.l) / np.sqrt(self.variance)
+        return (0.5/self.variance) * zl * self.ratio_phiPhi(-zl)
+
+    def dlogpdf_link_dvar_upperCensored(self, link_f):
+        zu = (link_f - self.u) / np.sqrt(self.variance)
+        return (0.5/self.variance) * zu * self.ratio_phiPhi(zu)
 
     def dlogpdf_link_dvar(self, link_f, y, Y_metadata):
         """
@@ -298,21 +373,90 @@ class Tobit(Likelihood):
         :returns: derivative of log likelihood evaluated at points link(f) w.r.t variance parameter
         :rtype: float
         """
-        assert ('lowerCensored' in Y_metadata.keys() and 'upperCensored' in Y_metadata.keys()
+        assert (('lowerCensored' in Y_metadata.keys() or 'upperCensored' in Y_metadata.keys())
                 and 'gaussianIndexes' in Y_metadata.keys())
+
+        grad = np.empty((link_f.shape[0],1))
 
         ''' TODO : maybe store the indexes corresponding to the three cases once in Y_metadata '''
         # idxValTuples = enumerate(y)
-        y_l_indexes = Y_metadata['lowerCensored']  # [idx for idx, val in idxValTuples if val == l]
-        y_u_indexes = Y_metadata['upperCensored']  # [idx for idx_val in idxValTuples if val == u]
         y_indexes = Y_metadata['gaussianIndexes']  # [idx for idx, val in idxValTuples if val > u and val < l]
 
-        zl = (link_f[y_l_indexes] - self.l)*inv_std
-        zu = (link_f[y_u_indexes] - self.u)*inv_std
-        dlik_dsigma_lowerCensoring = np.sum(zl*self.ratio_phiPhi(-zl))
-        dlik_dsigma_upperCensoring = np.sum(zu*self.ratio_phiPhi(zu))
-        dlik_dsigma_gaussian = np.sum((y[y_indexes] - link_f[y_indexes])**2/self.variance - 1)
-        return (0.5/self.variance)*(dlik_dsigma_lowerCensoring - dlik_dsigma_upperCensoring + dlik_dsigma_gaussian)
+        if(self.l is not None and 'lowerCensored' in Y_metadata.keys()):
+            y_l_indexes = Y_metadata['lowerCensored']  # [idx for idx, val in idxValTuples if val == l]
+            grad[y_l_indexes] = self.dlogpdf_link_dvar_lowerCensored(link_f[y_l_indexes])
+
+        if(self.u is not None and 'upperCensored' in Y_metadata.keys()):
+            y_u_indexes = Y_metadata['upperCensored']  # [idx for idx_val in idxValTuples if val == u]
+            grad[y_u_indexes] = self.dlogpdf_link_dvar_upperCensored(link_f[y_u_indexes])
+
+        grad[y_indexes] = (0.5/self.variance)*((y[y_indexes] - link_f[y_indexes])**2/self.variance - 1.)
+        return grad
+
+    def variational_expectations_censored(self, X, gh_w, shape, logp, dlogp_dx, d2logp_dx2):
+        # average over the grid to get derivatives of the Gaussian's parameters
+        # division by pi comes from fact that for each quadrature we need to scale by 1/sqrt(pi)
+        F = np.dot(logp, gh_w) / np.sqrt(np.pi)
+        dF_dm = np.dot(dlogp_dx, gh_w) / np.sqrt(np.pi)
+        dF_dv = np.dot(d2logp_dx2, gh_w) / np.sqrt(np.pi)
+        dF_dv /= 2.
+
+        if np.any(np.isnan(dF_dv)) or np.any(np.isinf(dF_dv)):
+            stop
+        if np.any(np.isnan(dF_dm)) or np.any(np.isinf(dF_dm)):
+            stop
+
+        if self.size:
+            dF_dtheta = self.dlogpdf_link_dvar_lowerCensored(X)  # Ntheta x (orig size) x N_{quad_points}
+            dF_dtheta = np.dot(dF_dtheta, gh_w) / np.sqrt(np.pi)
+            dF_dtheta = dF_dtheta.reshape(self.size, shape[0], shape[1])
+        else:
+            dF_dtheta = None  # Not yet implemented
+
+        return F, dF_dmu, dF_dv, dF_dtheta
+
+    def variational_expectations(self, Y, m, v, gh_points=None, Y_metadata=None):
+        keys = Y_metadata.keys()
+        assert('gaussianIndexes' in keys and ('lowerCensored' in Y_metadata or 'upperThreshold' in Y_metadata))
+        n = Y.shape[0]
+        F = np.empty((n,))
+        dF_dmu = np.empty((n,))
+        dF_dv = np.empty((n,))
+
+        ''' For non-censored data -> gaussian case '''
+        y_indexes = Y_metadata['gaussianIndexes']  # [idx for idx, val in idxValTuples if val > u and val < l]
+        lik_var = float(self.variance)
+        F = -0.5 * np.log(2 * np.pi) - 0.5 * np.log(lik_var) - 0.5 * (
+                    np.square(Y[y_indexes]) + np.square(m[y_indexes]) + v - 2 * m[y_indexes] * Y[y_indexes]) / lik_var
+        dF_dmu[y_indexes] = (Y[y_indexes] - m[y_indexes]) / lik_var
+        dF_dv[y_indexes] = np.ones_like(v[y_indexes]) * (-0.5 / lik_var)
+        dF_dtheta[y_indexes] = -0.5 / lik_var + 0.5 * (np.square(Y[y_indexes]) + np.square(m[y_indexes]) + v[y_indexes] - 2 * m[y_indexes] * Y[y_indexes]) / (lik_var ** 2)
+
+        ''' Here, no analytical expressions so use Gaussian quadrature (as in likelihoods.variational_expectations) '''
+        if gh_points is None:
+            gh_x, gh_w = self._gh_points()
+        else:
+            gh_x, gh_w = gh_points
+        if(self.l is not None and 'lowerCensored' in keys):
+            y_l_indexes = Y_metadata['lowerCensored']  # [idx for idx, val in idxValTuples if val == l]
+            shape = m[y_l_indexes].shape
+            m_l, v_l = m[y_l_indexes].flatten(), v[y_l_indexes].flatten()
+
+            # make a grid of points
+            X = gh_x[None, :] * np.sqrt(2. * v_l[:, None]) + m_l[:, None]
+
+            # evaluate the likelihood for the grid. First ax indexes the data (and mu, var) and the second indexes the grid.
+            # broadcast needs to be handled carefully.
+            logp = self.logpdf_link_lowerCensored(X)
+            dlogp_dx = self.dlogpdf_dlink_lowerCensored(X)
+            d2logp_dx2 = self.d2logpdf_dlink2_lowerCensored(X)
+
+            variational_expectations_censored(X, gh_w, shape, logp, dlogp_dx, d2logp_dx2)
+
+        if(self.u is not None and 'upperThreshold' in keys):
+            y_u_indexes = Y_metadata['upperCensored']  # [idx for idx_val in idxValTuples if val == u]
+
+        return F, dF_dmu, dF_dv, dF_dtheta.reshape(1, Y.shape[0], Y.shape[1])
 
     def ratio_phiPhi(self, z):
         '''
