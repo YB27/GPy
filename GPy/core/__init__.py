@@ -48,6 +48,7 @@ from . import parameterization
 
 from .gp import GP
 from .svgp import SVGP
+from .svgp_censored import SVGPCensored
 from .sparse_gp import SparseGP
 from .gp_grid import GpGrid
 from .mapping import *
