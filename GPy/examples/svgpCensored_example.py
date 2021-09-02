@@ -3,6 +3,7 @@ import sys
 sys.path.insert(1, '/home/breux/GPy')
 
 import numpy as np
+from scipy import stats
 import matplotlib.pyplot as plt
 import GPy
 import climin
@@ -14,7 +15,7 @@ The example here is based on the GPy tutorial "Stochastic Variational Inference 
 '''
 
 def generateData():
-    N = 5000
+    N = 2500
     X = np.random.rand(N)[:, None]
     Y = np.sin(6 * X) + 0.1 * np.random.randn(N, 1)
     # Inducing points
@@ -25,8 +26,7 @@ def generateData():
 def generateCensoredData(Y, l, u):
     Y_metadata = {}
     Y_c = Y.copy()
-    n = Y.shape[0]
-    y_l_index, y_u_indexes = [],[]
+    y_l_index, y_u_indexes = [], []
     if l is not None:
         y_l_indexes = [idx for idx, val in np.ndenumerate(Y.flatten()) if val <= l]
         #lowerCensoredData = np.zeros((n,), dtype='int64')
@@ -68,7 +68,7 @@ def optimizeAndPlotSVGP(m, X, Y, title):
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_title(title)
-    m.plot(which_data_ycols=[0], plot_limits=(X.min(), X.max()), ax=ax)
+    m.plot_f(which_data_ycols=[0], plot_limits=(X.min(), X.max()), ax=ax)
     ax.set_xlim((X.min(), X.max()))
     fig.tight_layout()
 
@@ -82,15 +82,16 @@ def lowerCensoredSVGP(X, Y, Z, l, batchsize, Y_metadata):
     optimizeAndPlotSVGP(m, X, Y, "lowerCensoredSVGP")
 
 def example():
+    l = -0.6
     X, Y, Z = generateData()
+    Y_l, Y_metadata = generateCensoredData(Y, l=l, u=None)
     batchsize = 10
-    print(" --> Original SVGP")
-    #originalSVGP(X, Y, Z, batchsize)
+    print(" --> Original SVGP with censored data")
+    originalSVGP(X, Y_l, Z, batchsize)
 
     print("Lower censored SVGP")
-    l = -0.6
-    Y_l, Y_metadata = generateCensoredData(Y, l=l, u=None)
-    lowerCensoredSVGP(X, Y_l, Z, 0.6, batchsize, Y_metadata)
+    #Y_l, Y_metadata = generateCensoredData(Y, l=l, u=None)
+    lowerCensoredSVGP(X, Y_l, Z, l, batchsize, Y_metadata)
 
     plt.show()
 
