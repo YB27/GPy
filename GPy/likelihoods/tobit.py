@@ -300,9 +300,12 @@ class Tobit(Likelihood):
     def d2logpdf_dlink2_upperCensored(self, link_f):
         sigma = np.sqrt(self.variance)
         z_u = (link_f - self.u) / sigma
-        phi_u = stats.norm.pdf(z_u)
-        Phi_u = stats.norm.cdf(z_u)
-        return -link_f * phi_u * (phi_u + Phi_u) / (self.variance * Phi_u ** 2)
+        ratio = self.ratio_phiPhi(z_u)
+        print("ratio in d2logpdf_dlink2_upperCensored : {}".format(ratio))
+        print("z_u : {}".format(z_u))
+        # print("link_f : {}".format(link_f))
+        print("self.variance : {}".format(self.variance))
+        return -link_f * ratio * (z_u + ratio) / self.variance #-link_f * phi_u * (phi_u + Phi_u) / (self.variance * Phi_u ** 2)
 
     def d2logpdf_dlink2(self, link_f, y, Y_metadata=None):
         """
@@ -338,7 +341,7 @@ class Tobit(Likelihood):
         if(self.l is not None and 'lowerCensored' in Y_metadata.keys()):
             y_l_indexes = Y_metadata['lowerCensored']  # [idx for idx, val in idxValTuples if val == l]
             hess[y_l_indexes] = self.d2logpdf_dlink2_lowerCensored(link_f[y_l_indexes]) #link_f[y_indexes]*phi_l*(one_minus_Phi_l - phi_l)/(self.variance*(one_minus_Phi_l**2))
-        if(self.u is not None and 'upperThreshold' in Y_metadata.keys()):
+        if(self.u is not None and 'upperCensored' in Y_metadata.keys()):
             y_u_indexes = Y_metadata['upperCensored']  # [idx for idx_val in idxValTuples if val == u]
             hess[y_u_indexes] = self.d2logpdf_dlink2_upperCensored(link_f[y_u_indexes]) #-link_f[y_u_indexes]*phi_u*(phi_u + Phi_u)/(self.variance*Phi_u**2)
 
@@ -438,7 +441,7 @@ class Tobit(Likelihood):
 
         ''' Here, no analytical expressions so use Gaussian quadrature (as in likelihoods.variational_expectations) '''
         if gh_points is None:
-            gh_x, gh_w = self._gh_points()
+            gh_x, gh_w = self._gh_points(T=20)
         else:
             gh_x, gh_w = gh_points
         if(self.l is not None and 'lowerCensored' in keys):
@@ -461,11 +464,11 @@ class Tobit(Likelihood):
 
                 F[y_l_indexes], dF_dmu[y_l_indexes], dF_dv[y_l_indexes], dF_dtheta[:,y_l_indexes,:] = self.variational_expectations_censored(X, gh_w, shape, logp, dlogp_dx, d2logp_dx2, self.dlogpdf_link_dvar_lowerCensored)
 
-        if(self.u is not None and 'upperThreshold' in keys):
+        if(self.u is not None and 'upperCensored' in keys):
             y_u_indexes = Y_metadata['upperCensored'].flatten()  # [idx for idx_val in idxValTuples if val == u]
             if y_u_indexes.size:
                 shape = m[y_u_indexes].shape
-                m_u, v_u = m[y_u_indexes].reshape((shape[0],1)), v[y_u_indexes].reshape((shape[0],1))
+                m_u, v_u = m[y_u_indexes].flatten(), v[y_u_indexes].flatten()
 
                 # make a grid of points
                 X = gh_x[None, :] * np.sqrt(2. * v_u[:, None]) + m_u[:, None]
@@ -476,7 +479,7 @@ class Tobit(Likelihood):
                 dlogp_dx = self.dlogpdf_dlink_upperCensored(X)
                 d2logp_dx2 = self.d2logpdf_dlink2_upperCensored(X)
 
-                F[y_u_indexes], dF_dmu[y_u_indexes], dF_dv[y_u_indexes], dF_dtheta[:,y_u_indexes,:] = variational_expectations_censored(X, gh_w, shape, logp, dlogp_dx, d2logp_dx2, self.dlogpdf_link_dvar_upperCensored)
+                F[y_u_indexes], dF_dmu[y_u_indexes], dF_dv[y_u_indexes], dF_dtheta[:,y_u_indexes,:] = self.variational_expectations_censored(X, gh_w, shape, logp, dlogp_dx, d2logp_dx2, self.dlogpdf_link_dvar_upperCensored)
 
         return F, dF_dmu, dF_dv, dF_dtheta
 

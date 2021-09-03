@@ -15,7 +15,7 @@ The example here is based on the GPy tutorial "Stochastic Variational Inference 
 '''
 
 def generateData():
-    N = 2500
+    N = 500
     X = np.random.rand(N)[:, None]
     Y = np.sin(6 * X) + 0.1 * np.random.randn(N, 1)
     # Inducing points
@@ -26,7 +26,7 @@ def generateData():
 def generateCensoredData(Y, l, u):
     Y_metadata = {}
     Y_c = Y.copy()
-    y_l_index, y_u_indexes = [], []
+    y_l_indexes, y_u_indexes = [], []
     if l is not None:
         y_l_indexes = [idx for idx, val in np.ndenumerate(Y.flatten()) if val <= l]
         #lowerCensoredData = np.zeros((n,), dtype='int64')
@@ -77,21 +77,43 @@ def originalSVGP(X, Y, Z, batchsize):
                       batchsize=batchsize)
     optimizeAndPlotSVGP(m, X, Y, "original SVGP")
 
-def lowerCensoredSVGP(X, Y, Z, l, batchsize, Y_metadata):
-    m = GPy.core.SVGPCensored(X, Y, Z, l, None, GPy.kern.RBF(1) + GPy.kern.White(1), batchsize=batchsize, Y_metadata=Y_metadata)
+def censoredSVGP(X, Y, Z, l, u, batchsize, Y_metadata):
+    m = GPy.core.SVGPCensored(X, Y, Z, l, u, GPy.kern.RBF(1) + GPy.kern.White(1), batchsize=batchsize, Y_metadata=Y_metadata)
     optimizeAndPlotSVGP(m, X, Y, "lowerCensoredSVGP")
 
+def lowerCensoredGP(X, Y, l, Y_metadata):
+    m = GPy.models.GPRegressionCensored(X, Y, lowerThreshold=l, upperThreshold=None, kernel=GPy.kern.RBF(1) + GPy.kern.White(1), noise_var = 1, Y_metadata=Y_metadata)
+    m.optimize(optimizer='lbfgs', max_iters=500, messages=True)
+    fig, ax = plt.subplots()
+    ax.plot(X, Y, 'kx', alpha=0.1)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title("GP Censored")
+    m.plot_f(which_data_ycols=[0], plot_limits=(X.min(), X.max()), ax=ax)
+    ax.set_xlim((X.min(), X.max()))
+    fig.tight_layout()
+
 def example():
-    l = -0.6
+    l = None # -0.7
+    u = 0.6
     X, Y, Z = generateData()
-    Y_l, Y_metadata = generateCensoredData(Y, l=l, u=None)
-    batchsize = 10
+    Y_l, Y_metadata = generateCensoredData(Y, l=l, u=u)
+    batchsize = 100
     print(" --> Original SVGP with censored data")
-    originalSVGP(X, Y_l, Z, batchsize)
+    #originalSVGP(X, Y_l, Z, batchsize)
 
     print("Lower censored SVGP")
     #Y_l, Y_metadata = generateCensoredData(Y, l=l, u=None)
-    lowerCensoredSVGP(X, Y_l, Z, l, batchsize, Y_metadata)
+    censoredSVGP(X, Y_l, Z, l, u, batchsize, Y_metadata)
+
+    '''lowerCensoredData = np.zeros((Y.shape[0],), dtype='int64')
+    lowerCensoredData_indexes = [idx for idx, val in np.ndenumerate(Y) if val < l]
+    np.put(lowerCensoredData, lowerCensoredData_indexes, 1)
+    gaussianData = np.zeros((Y.shape[0],), dtype='int64')
+    gaussianData_indexes = [idx for idx, val in np.ndenumerate(Y) if val >= l]
+    np.put(gaussianData, gaussianData_indexes, 1)
+    Y_metadata_GP = {"lowerCensored": lowerCensoredData.reshape((Y.shape[0], 1)), "gaussianIndexes": gaussianData.reshape((Y.shape[0], 1))}
+    lowerCensoredGP(X, Y_l, l, Y_metadata_GP)'''
 
     plt.show()
 
