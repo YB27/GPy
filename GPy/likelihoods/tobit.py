@@ -291,21 +291,21 @@ class Tobit(Likelihood):
         sigma = np.sqrt(self.variance)
         z_l = (link_f - self.l) / sigma
         ratio = self.ratio_phiPhi(-z_l)
-        print("ratio in d2logpdf_dlink2_lowerCensored : {}".format(ratio))
-        print("z_l : {}".format(z_l))
+        #print("ratio in d2logpdf_dlink2_lowerCensored : {}".format(ratio))
+        #print("z_l : {}".format(z_l))
         #print("link_f : {}".format(link_f))
-        print("self.variance : {}".format(self.variance))
-        return link_f*ratio*(z_l - ratio)/self.variance
+        #print("self.variance : {}".format(self.variance))
+        return ratio*(z_l - ratio)/self.variance
 
     def d2logpdf_dlink2_upperCensored(self, link_f):
         sigma = np.sqrt(self.variance)
         z_u = (link_f - self.u) / sigma
         ratio = self.ratio_phiPhi(z_u)
-        print("ratio in d2logpdf_dlink2_upperCensored : {}".format(ratio))
-        print("z_u : {}".format(z_u))
+        #print("ratio in d2logpdf_dlink2_upperCensored : {}".format(ratio))
+        #print("z_u : {}".format(z_u))
         # print("link_f : {}".format(link_f))
-        print("self.variance : {}".format(self.variance))
-        return -link_f * ratio * (z_u + ratio) / self.variance #-link_f * phi_u * (phi_u + Phi_u) / (self.variance * Phi_u ** 2)
+        #print("self.variance : {}".format(self.variance))
+        return -ratio * (z_u + ratio) / self.variance #-link_f * phi_u * (phi_u + Phi_u) / (self.variance * Phi_u ** 2)
 
     def d2logpdf_dlink2(self, link_f, y, Y_metadata=None):
         """
@@ -350,16 +350,14 @@ class Tobit(Likelihood):
 
     def dlogpdf_link_dvar_lowerCensored(self, link_f):
         dlogpdf_dtheta = np.zeros((self.size, link_f.shape[0], link_f.shape[1]))
-        inv_std = 1. / np.sqrt(self.variance)
-        zl = (link_f - self.l) * inv_std
-        dlogpdf_dtheta[0,:,:] = -zl*inv_std*stats.norm.pdf(zl) #(0.5/self.variance) * zl * self.ratio_phiPhi(-zl)
+        zl = (link_f - self.l) / np.sqrt(self.variance)
+        dlogpdf_dtheta[0, :, :] = zl*self.ratio_phiPhi(-zl) / (2. * self.variance) #(0.5/self.variance) * zl * self.ratio_phiPhi(-zl)
         return dlogpdf_dtheta
 
     def dlogpdf_link_dvar_upperCensored(self, link_f):
         dlogpdf_dtheta = np.zeros((self.size, link_f.shape[0], link_f.shape[1]))
-        inv_std = 1. / np.sqrt(self.variance)
-        zu = (link_f - self.u) * inv_std
-        dlogpdf_dtheta[0, :, :] = zu * inv_std * stats.norm.pdf(zu)
+        zu = (link_f - self.u) / np.sqrt(self.variance)
+        dlogpdf_dtheta[0, :, :] = -zu * self.ratio_phiPhi(zu) / (2. * self.variance)
         return dlogpdf_dtheta
 
     def dlogpdf_link_dvar(self, link_f, y, Y_metadata):
@@ -427,17 +425,18 @@ class Tobit(Likelihood):
         dF_dtheta = np.empty((self.size, n, m.shape[1]))
 
         ''' For non-censored data -> gaussian case '''
-        y_indexes = Y_metadata['gaussianIndexes'].flatten()  # [idx for idx, val in idxValTuples if val > u and val < l]
         lik_var = float(self.variance)
-        Y_indexes = Y[y_indexes]
-        m_indexes = m[y_indexes]
-        v_indexes = v[y_indexes]
+        y_indexes = Y_metadata['gaussianIndexes'].flatten()  # [idx for idx, val in idxValTuples if val > u and val < l]
+        if y_indexes.size:
+            Y_indexes = Y[y_indexes]
+            m_indexes = m[y_indexes]
+            v_indexes = v[y_indexes]
 
-        F[y_indexes] = -0.5 * np.log(2 * np.pi) - 0.5 * np.log(lik_var) - 0.5 * (
-                    np.square(Y_indexes) + np.square(m_indexes) + v_indexes - 2 * m_indexes * Y_indexes) / lik_var
-        dF_dmu[y_indexes] = (Y_indexes - m_indexes) / lik_var
-        dF_dv[y_indexes] = np.ones_like(v_indexes) * (-0.5 / lik_var)
-        dF_dtheta[:,y_indexes,:] = -0.5 / lik_var + 0.5 * (np.square(Y_indexes) + np.square(m_indexes) + v_indexes - 2 * m_indexes * Y_indexes) / (lik_var ** 2)
+            F[y_indexes] = -0.5 * np.log(2 * np.pi) - 0.5 * np.log(lik_var) - 0.5 * (
+                        np.square(Y_indexes) + np.square(m_indexes) + v_indexes - 2 * m_indexes * Y_indexes) / lik_var
+            dF_dmu[y_indexes] = (Y_indexes - m_indexes) / lik_var
+            dF_dv[y_indexes] = np.ones_like(v_indexes) * (-0.5 / lik_var)
+            dF_dtheta[:,y_indexes,:] = -0.5 / lik_var + 0.5 * (np.square(Y_indexes) + np.square(m_indexes) + v_indexes - 2. * m_indexes * Y_indexes) / (lik_var ** 2)
 
         ''' Here, no analytical expressions so use Gaussian quadrature (as in likelihoods.variational_expectations) '''
         if gh_points is None:
@@ -494,9 +493,10 @@ class Tobit(Likelihood):
             return self._ratio_phiPhi(z)
 
     def _ratio_phiPhi(self, z):
+        threshold = -10
         idxValTuples = list(enumerate(z))
         #print("idxValTuples: {}".format(idxValTuples))
-        idx_low = [idx for idx, val in idxValTuples if val < -10]
+        idx_low = [idx for idx, val in idxValTuples if val < threshold]
         res = np.zeros((z.shape[0],))
         if(len(idx_low) == 0):
             ''' Compute normally '''
@@ -507,7 +507,7 @@ class Tobit(Likelihood):
             ''' Use an asymptotic expansion '''
             z_low = z[idx_low]
             #print("z_low : {}".format(z_low))
-            other_idx = [idx for idx, val in idxValTuples if val >= -10]
+            other_idx = [idx for idx, val in idxValTuples if val >= threshold]
             z2 = z_low**2
             c = 1. - 1. / z2 * (1. - 3. / z2 * (1. - 5. / z2 * (1. - 7. / z2)))
             dc = 2. / z_low**3 - 12. / z_low**5 + 90. / z_low**7 - 840. / z_low**9

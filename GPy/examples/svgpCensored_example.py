@@ -15,7 +15,7 @@ The example here is based on the GPy tutorial "Stochastic Variational Inference 
 '''
 
 def generateData():
-    N = 500
+    N = 5000
     X = np.random.rand(N)[:, None]
     Y = np.sin(6 * X) + 0.1 * np.random.randn(N, 1)
     # Inducing points
@@ -47,12 +47,12 @@ def generateCensoredData(Y, l, u):
 
     return Y_c, Y_metadata
 
-def optimizeAndPlotSVGP(m, X, Y, title):
-    m.kern.white.variance = 1e-5
-    m.kern.white.fix()
+def optimizeAndPlotSVGP(m, X, Y, title, niter=5000):
+    #m.kern.white.variance = 1e-5
+    #m.kern.white.fix()
 
     def callback(i):
-        print("Log-likelihood : {}".format(m.log_likelihood()))
+        #print("Log-likelihood : {}".format(m.log_likelihood()))
         # Stop after 5000 iterations
         if i['n_iter'] > 5000:
             return True
@@ -73,12 +73,15 @@ def optimizeAndPlotSVGP(m, X, Y, title):
     fig.tight_layout()
 
 def originalSVGP(X, Y, Z, batchsize):
-    m = GPy.core.SVGP(X, Y, Z, GPy.kern.RBF(1) + GPy.kern.White(1), GPy.likelihoods.Gaussian(),
+    kern = GPy.kern.RBF(1)
+    print("Kern SVGP : ")
+    print(kern[''])
+    m = GPy.core.SVGP(X, Y, Z, GPy.kern.RBF(1), GPy.likelihoods.Gaussian(),
                       batchsize=batchsize)
-    optimizeAndPlotSVGP(m, X, Y, "original SVGP")
+    optimizeAndPlotSVGP(m, X, Y, "original SVGP without censored data")
 
 def censoredSVGP(X, Y, Z, l, u, batchsize, Y_metadata):
-    m = GPy.core.SVGPCensored(X, Y, Z, l, u, GPy.kern.RBF(1) + GPy.kern.White(1), batchsize=batchsize, Y_metadata=Y_metadata)
+    m = GPy.core.SVGPCensored(X, Y, Z, l, u, GPy.kern.RBF(1), batchsize=batchsize, Y_metadata=Y_metadata)
     optimizeAndPlotSVGP(m, X, Y, "lowerCensoredSVGP")
 
 def lowerCensoredGP(X, Y, l, Y_metadata):
@@ -94,13 +97,15 @@ def lowerCensoredGP(X, Y, l, Y_metadata):
     fig.tight_layout()
 
 def example():
-    l = None # -0.7
+    l = -0.7
     u = 0.6
     X, Y, Z = generateData()
     Y_l, Y_metadata = generateCensoredData(Y, l=l, u=u)
-    batchsize = 100
-    print(" --> Original SVGP with censored data")
-    #originalSVGP(X, Y_l, Z, batchsize)
+    batchsize = 10
+
+    X_noCensoredData, Y_noCensoredData = X[Y_metadata["gaussianIndexes"].flatten()], Y[Y_metadata["gaussianIndexes"].flatten()]
+    print(" --> Original SVGP without censored data")
+    originalSVGP(X_noCensoredData, Y_noCensoredData, Z, batchsize)
 
     print("Lower censored SVGP")
     #Y_l, Y_metadata = generateCensoredData(Y, l=l, u=None)
